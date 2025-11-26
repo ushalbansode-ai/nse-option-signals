@@ -1,0 +1,37 @@
+name: analyse
+
+on:
+  schedule:
+    - cron: "5 9 * * 1-5"   # 9:05 AM IST
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install requirements
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas requests
+
+    - name: Run python main.py
+      run: python main.py
+
+    - name: Commit updated signals
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git add latest.csv signal.csv
+        git commit -m "Auto-update $(date)" || echo "No changes"
+        git push
+        
