@@ -1,7 +1,7 @@
 import requests
 import datetime
-
-BASE_URL = "https://archives.nseindia.com/content/fo/fo{date}bhav.DAT"
+import zipfile
+import io
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -9,45 +9,50 @@ HEADERS = {
     "Referer": "https://www.nseindia.com"
 }
 
-def is_weekend(date):
-    # Monday = 0 ... Sunday = 6
-    return date.weekday() >= 5
+URL_DAT = "https://archives.nseindia.com/content/fo/fo{date}bhav.DAT"
+URL_ZIP = "https://archives.nseindia.com/content/fo/fo{date}bhav.csv.zip"
 
-def try_download(date_str):
-    url = BASE_URL.format(date=date_str)
+
+def is_weekend(d):
+    return d.weekday() >= 5
+
+
+def try_url(url):
     print(f"Trying: {url}")
-    resp = requests.get(url, headers=HEADERS)
-
-    if resp.status_code == 200:
-        print(f"✔ Found bhavcopy: {date_str}")
-        return resp.content
-
+    r = requests.get(url, headers=HEADERS)
+    if r.status_code == 200:
+        print("✔ Found file")
+        return r.content
     return None
 
 
 def fetch_dat():
-    """
-    Auto-detects the latest available DAT bhavcopy:
-    - Skips weekends
-    - Looks back up to 7 days
-    """
-
     today = datetime.datetime.now()
 
-    # Try last 7 days
+    # Look back 7 days
     for delta in range(0, 7):
-        day = today - datetime.timedelta(days=delta)
-
-        # Skip Saturday & Sunday
-        if is_weekend(day):
-            print(f"Skipping weekend: {day.strftime('%d-%m-%Y')}")
+        d = today - datetime.timedelta(days=delta)
+        if is_weekend(d):
+            print(f"Skipping weekend: {d.strftime('%d-%m-%Y')}")
             continue
 
-        date_str = day.strftime("%d%m%Y")
-        data = try_download(date_str)
+        date_str = d.strftime("%d%m%Y")
 
-        if data:
-            return data
+        # Try DAT format
+        dat_url = URL_DAT.format(date=date_str)
+        dat_file = try_url(dat_url)
+        if dat_file:
+            return dat_file
 
-    raise Exception("No bhavcopy found for last 7 days!")
-    
+        # Try ZIP CSV format
+        zip_url = URL_ZIP.format(date=date_str)
+        zip_file = try_url(zip_url)
+        if zip_file:
+            print("✔ ZIP file found. Extracting...")
+            z = zipfile.ZipFile(io.BytesIO(zip_file))
+            # There is exactly one CSV inside
+            name = z.namelist()[0]
+            return z.read(name)
+
+    raise Exception("No DAT or ZIP bhavcopy available for last 7 days.")
+            
