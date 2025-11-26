@@ -1,4 +1,9 @@
-import pandas as pd
+def compute_features(df):
+    if not isinstance(df, pd.DataFrame):
+        raise ValueError("compute_features(): input is NOT a DataFrame")
+
+    df = df.copy()
+    import pandas as pd
 
 def compute_features(df):
     """
