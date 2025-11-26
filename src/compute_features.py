@@ -1,30 +1,32 @@
+import pandas as pd
+
 def compute_features(df):
     """
     Compute features for futures contracts.
-    Must return a Pandas DataFrame.
+    Returns a clean Pandas DataFrame with additional columns.
     """
-    import pandas as pd
 
     df = df.copy()
 
-    # Convert columns to numeric safely
-    df["OPEN"] = pd.to_numeric(df["OPEN"], errors="coerce")
-    df["HIGH"] = pd.to_numeric(df["HIGH"], errors="coerce")
-    df["LOW"] = pd.to_numeric(df["LOW"], errors="coerce")
-    df["CLOSE"] = pd.to_numeric(df["CLOSE"], errors="coerce"])
-    df["SETTLE_PR"] = pd.to_numeric(df["SETTLE_PR"], errors="coerce")
+    # Convert important columns to numeric (safe conversion)
+    numeric_cols = ["OPEN", "HIGH", "LOW", "CLOSE", "SETTLE_PR"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Basic features
+    # Filter only futures (FUTIDX, FUTSTK)
+    df = df[df["INSTRUMENT"].str.contains("FUT", na=False)]
+
+    # Basic price action features
     df["range"] = df["HIGH"] - df["LOW"]
     df["body"] = df["CLOSE"] - df["OPEN"]
     df["upper_wick"] = df["HIGH"] - df[["CLOSE", "OPEN"]].max(axis=1)
     df["lower_wick"] = df[["CLOSE", "OPEN"]].min(axis=1) - df["LOW"]
 
-    # Momentum feature
+    # Momentum (1-period difference)
     df["momentum"] = df["CLOSE"] - df["CLOSE"].shift(1)
 
-    # Only return FUTIDX + FUTSTK rows
-    df = df[df["INSTRUMENT"].str.contains("FUT", na=False)]
+    # Remove rows with no numeric data
+    df = df.dropna(subset=["OPEN", "HIGH", "LOW", "CLOSE"])
 
     return df
-  
+    
