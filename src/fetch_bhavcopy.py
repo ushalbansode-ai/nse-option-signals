@@ -1,64 +1,64 @@
-import pandas as pd
 import requests
+import pandas as pd
 from datetime import datetime, timedelta
 
-BASE = "https://archives.nseindia.com/content/fo"
-
-# NSE valid DAT patterns (confirmed)
-PATTERNS = [
-    "FNO_{d}.DAT",
-    "FNO_BC{d}.DAT",
-    "FNOBC{d}.DAT",
-    "FNOBCT{d}.DAT"
+# -------------------------
+# VALID DAT FILENAME PATTERNS (ALL REAL NSE FORMAT)
+# -------------------------
+DAT_PATTERNS = [
+    "https://archives.nseindia.com/content/fo/FNO_BC{dmy}.DAT",          # FNO_BC26112025.DAT
+    "https://archives.nseindia.com/content/fo/FNOBC{dmy}.DAT",           # FNOBC26112025.DAT
+    "https://archives.nseindia.com/content/fo/FNOBCT{dmy}.DAT",          # FNOBCT26112025.DAT
+    "https://archives.nseindia.com/content/fo/FNO_BC{dmY}.DAT",          # FNO_BC26NOV2025.DAT
+    "https://archives.nseindia.com/content/fo/fo{dmY}bhav.DAT",          # fo26NOV2025bhav.DAT
 ]
 
-
 def fetch_bhavcopy():
-    """
-    Auto-fetch NSE Futures bhavcopy DAT file.
-    No directory listing. No chardet. Pure deterministic logic.
-    Tries 7 recent trading days.
-    """
-
     today = datetime.now()
-    attempts = []
+    tried_urls = []
 
-    for i in range(7):
-        day = today - timedelta(days=i)
-
-        # Skip Saturday/Sunday
-        if day.weekday() >= 5:
+    for i in range(7):            # Last 7 days
+        dt = today - timedelta(days=i)
+        if dt.weekday() >= 5:     # Skip Sat/Sun
             continue
 
-        dstr = day.strftime("%d%m%Y")
+        dmy = dt.strftime("%d%m%Y")
+        dmY = dt.strftime("%d%b%Y").upper()
 
-        for pattern in PATTERNS:
-            filename = pattern.format(d=dstr)
-            url = f"{BASE}/{filename}"
-
-            attempts.append(url)
-            print(f"Trying: {url}")
+        for p in DAT_PATTERNS:
+            url = p.format(dmy=dmy, dmY=dmY)
+            tried_urls.append(url)
+            print(f"Trying DAT: {url}")
 
             try:
                 r = requests.get(url, timeout=10)
-                if r.status_code == 200 and len(r.content) > 5000:
-                    print(f"Downloaded DAT: {filename}")
+                if r.status_code == 200 and len(r.content) > 10000:   # DAT must be large
+                    print(f"✔ DAT found: {url}")
+                    raw = r.content.decode("latin1")
 
-                    text = r.content.decode("latin1")  # Safe decode
-                    lines = [x.strip() for x in text.split("\n") if x.strip()]
+                    df = pd.read_csv(
+                        pd.io.common.StringIO(raw),
+                        sep=",",
+                        header=None
+                    )
 
-                    df = pd.DataFrame([x.split(",") for x in lines])
-                    df.columns = df.iloc[0]
-                    df = df[1:]
+                    # DAT FORMAT → EXACT COLUMN HEADERS
+                    df.columns = [
+                        "INSTRUMENT", "SYMBOL", "EXPIRY_DT",
+                        "STRIKE_PR", "OPTION_TYP",
+                        "OPEN", "HIGH", "LOW", "CLOSE",
+                        "SETTLE_PR", "CONTRACTS", "VAL_INLAKH",
+                        "OPEN_INT", "CHG_IN_OI", "TIMESTAMP"
+                    ]
 
                     return df
 
-            except Exception as e:
-                print(f"Error fetching {url}: {e}")
+            except Exception:
+                pass
 
     print("\nTried URLs:")
-    for a in attempts:
-        print(a)
+    for u in tried_urls:
+        print(u)
 
-    raise Exception("No valid F&O DAT bhavcopy found in last 7 days.")
+    raise Exception("No valid DAT bhavcopy found in last 7 trading days.")
     
