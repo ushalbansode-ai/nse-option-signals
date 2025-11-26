@@ -3,17 +3,19 @@ import datetime
 
 def fetch_dat():
     today = datetime.datetime.now().strftime("%d%m%Y")
-    url = f"https://www.nseindia.com/content/historical/DERIVATIVES/{today}/fo{today}bhav.csv.zip"
+    url = f"https://archives.nseindia.com/content/fo/fo{today}bhav.DAT"
 
     headers = {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*",
+        "Referer": "https://www.nseindia.com"
     }
 
-    print(f"Downloading: {url}")
-    r = requests.get(url, headers=headers)
+    print("Downloading:", url)
+    resp = requests.get(url, headers=headers)
 
-    if r.status_code != 200:
-        raise Exception("Failed to download DAT bhavcopy")
+    if resp.status_code != 200:
+        raise Exception(f"Failed to download DAT bhavcopy: {resp.status_code}")
 
-    return r.content
-  
+    return resp.content
+    
