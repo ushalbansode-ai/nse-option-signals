@@ -33,18 +33,27 @@ def extract_csv(zip_bytes):
 
 def compute_signals(df):
 
+    # Updated column names based on NSE bhavcopy screenshot
     required_cols = [
-        "TckrSymb", "FinInstrmTp", "XpryDt", "FinInstrmActnStrkPric",
-        "OptnTp", "OpnIntrst", "ChngInOpnIntrst", "TtlTradgVol",
-        "LastPric", "ClsPric"
+        "TckrSymb",
+        "FinInstrmTp",
+        "XpryDt",
+        "StrkPric",          # UPDATED
+        "OptnTp",
+        "OpnIntrst",
+        "ChngInOpnIntrst",
+        "TrnOlTrdVol",       # UPDATED
+        "LastPric",
+        "ClsPric"
     ]
 
     for col in required_cols:
         if col not in df.columns:
             raise Exception(f"Missing column: {col}")
 
+    # Build new signals
     df["OI_Buildup"] = df["ChngInOpnIntrst"]
-    df["Volume_Spike"] = df["TtlTradgVol"]
+    df["Volume_Spike"] = df["TrnOlTrdVol"]
     df["Price_Change"] = df["LastPric"] - df["ClsPric"]
 
     return df
@@ -52,9 +61,16 @@ def compute_signals(df):
 def save_outputs(df):
     df.to_csv("fo_latest.csv", index=False)
 
-    summary = df[["TckrSymb", "XpryDt", "FinInstrmActnStrkPric", "OptnTp",
-                  "OpnIntrst", "ChngInOpnIntrst", "TtlTradgVol",
-                  "Price_Change"]].head(50)
+    summary = df[[
+        "TckrSymb",
+        "XpryDt",
+        "StrkPric",          # UPDATED
+        "OptnTp",
+        "OpnIntrst",
+        "ChngInOpnIntrst",
+        "TrnOlTrdVol",       # UPDATED
+        "Price_Change"
+    ]].head(50)
 
     with open("fo_signal.json", "w") as f:
         json.dump(summary.to_dict(orient="records"), f, indent=2)
