@@ -1,4 +1,4 @@
-name: NSE FO Auto Bhavcopy + Signals
+name: NSE FO Auto Bhavcopy + Option Signals
 
 on:
   schedule:
@@ -30,6 +30,6 @@ jobs:
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          git add data/signals/*.csv || true
-          git commit -m "Auto update F&O bhavcopy + signals" || true
+          git add data/signals/*.csv data/signals/*.txt || true
+          git commit -m "Auto update: F&O bhavcopy + option opportunities" || true
           git push || true
