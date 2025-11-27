@@ -3,7 +3,7 @@ import requests
 import zipfile
 import datetime
 import pandas as pd
-import shutil
+import numpy as np
 
 BASE_DIR = "data"
 OUT_DIR = "data/signals"
@@ -68,46 +68,201 @@ def fetch_latest_bhavcopy():
 
 
 # -----------------------------------------------------------
-# 2) Compute Signals
+# 2) Compute Option Buying Opportunities from Futures Data
 # -----------------------------------------------------------
 
-def compute_signals(df):
-
-    # Ensure correct columns exist
-    required_cols = [
-        "TckrSymb",
-        "OpnIntrst",
-        "ChngInOpnIntrst",
-        "LastPric",
-        "PrvsClsgPric",
-        "TtlTradgVol",
-    ]
-
-    for col in required_cols:
-        if col not in df.columns:
-            raise Exception(f"Missing column: {col}")
-
-    # Add momentum
-    df["momentum"] = df["LastPric"] - df["PrvsClsgPric"]
-
-    # Add OI Trend
-    df["oi_trend"] = df["ChngInOpnIntrst"]
-
-    # Volume spike
-    df["vol_spike"] = df["TtlTradgVol"].pct_change().fillna(0)
-
-    # BUY Signal
-    df["buy_signal"] = (
-        (df["momentum"] > 0)
-        & (df["oi_trend"] > 0)
-        & (df["vol_spike"] > 0.25)
-    ).astype(int)
-
-    return df
+def identify_option_opportunities(df):
+    """
+    Identify option buying opportunities based on futures data signals
+    """
+    
+    # Filter only futures data (ending with 'FUT')
+    futures_df = df[df['TckrSymb'].str.endswith('FUT', na=False)].copy()
+    
+    print(f"Found {len(futures_df)} futures contracts")
+    
+    if len(futures_df) == 0:
+        return pd.DataFrame()
+    
+    # Calculate technical indicators for futures
+    futures_df['momentum'] = futures_df['LastPric'] - futures_df['PrvsClsgPric']
+    futures_df['oi_trend'] = futures_df['ChngInOpnIntrst']
+    futures_df['vol_spike'] = futures_df['TtlTradgVol'].pct_change().fillna(0)
+    
+    # Strong bullish signals (for CALL options)
+    bullish_conditions = (
+        (futures_df['momentum'] > 0) &
+        (futures_df['oi_trend'] > 0) &
+        (futures_df['vol_spike'] > 0.25)
+    )
+    
+    # Strong bearish signals (for PUT options)  
+    bearish_conditions = (
+        (futures_df['momentum'] < 0) &
+        (futures_df['oi_trend'] < 0) &
+        (futures_df['vol_spike'] > 0.25)
+    )
+    
+    # Extract underlying symbol from futures (remove 'FUT' suffix)
+    futures_df['underlying'] = futures_df['TckrSymb'].str.replace('FUT', '')
+    
+    # Get current price for strike selection
+    futures_df['current_price'] = futures_df['LastPric']
+    
+    # Create opportunities dataframe
+    opportunities = []
+    
+    # Bullish opportunities - BUY CALL options
+    bullish_futures = futures_df[bullish_conditions]
+    for _, future in bullish_futures.iterrows():
+        opportunities.append({
+            'underlying': future['underlying'],
+            'future_price': future['LastPric'],
+            'momentum': future['momentum'],
+            'oi_change': future['oi_trend'],
+            'volume_spike': future['vol_spike'],
+            'recommendation': 'BUY CALL',
+            'reason': 'Strong bullish momentum with OI increase and volume spike',
+            'suggested_strikes': f"ATM to OTM (Current: {future['LastPric']:.2f})",
+            'expiry_priority': 'Current month',
+            'risk_level': 'Medium',
+            'signal_strength': 'Strong'
+        })
+    
+    # Bearish opportunities - BUY PUT options
+    bearish_futures = futures_df[bearish_conditions]
+    for _, future in bearish_futures.iterrows():
+        opportunities.append({
+            'underlying': future['underlying'],
+            'future_price': future['LastPric'],
+            'momentum': future['momentum'],
+            'oi_change': future['oi_trend'],
+            'volume_spike': future['vol_spike'],
+            'recommendation': 'BUY PUT',
+            'reason': 'Strong bearish momentum with OI decrease and volume spike',
+            'suggested_strikes': f"ATM to OTM (Current: {future['LastPric']:.2f})",
+            'expiry_priority': 'Current month',
+            'risk_level': 'Medium',
+            'signal_strength': 'Strong'
+        })
+    
+    # Moderate opportunities (weaker signals)
+    moderate_bullish = (
+        (futures_df['momentum'] > 0) &
+        (futures_df['oi_trend'] > 0) &
+        (futures_df['vol_spike'].between(0.1, 0.25))
+    )
+    
+    moderate_bearish = (
+        (futures_df['momentum'] < 0) &
+        (futures_df['oi_trend'] < 0) &
+        (futures_df['vol_spike'].between(0.1, 0.25))
+    )
+    
+    # Add moderate bullish opportunities
+    mod_bullish_futures = futures_df[moderate_bullish]
+    for _, future in mod_bullish_futures.iterrows():
+        opportunities.append({
+            'underlying': future['underlying'],
+            'future_price': future['LastPric'],
+            'momentum': future['momentum'],
+            'oi_change': future['oi_trend'],
+            'volume_spike': future['vol_spike'],
+            'recommendation': 'BUY CALL',
+            'reason': 'Moderate bullish momentum with OI increase',
+            'suggested_strikes': f"ATM (Current: {future['LastPric']:.2f})",
+            'expiry_priority': 'Current month',
+            'risk_level': 'High',
+            'signal_strength': 'Moderate'
+        })
+    
+    # Add moderate bearish opportunities
+    mod_bearish_futures = futures_df[moderate_bearish]
+    for _, future in mod_bearish_futures.iterrows():
+        opportunities.append({
+            'underlying': future['underlying'],
+            'future_price': future['LastPric'],
+            'momentum': future['momentum'],
+            'oi_change': future['oi_trend'],
+            'volume_spike': future['vol_spike'],
+            'recommendation': 'BUY PUT',
+            'reason': 'Moderate bearish momentum with OI decrease',
+            'suggested_strikes': f"ATM (Current: {future['LastPric']:.2f})",
+            'expiry_priority': 'Current month',
+            'risk_level': 'High',
+            'signal_strength': 'Moderate'
+        })
+    
+    return pd.DataFrame(opportunities)
 
 
 # -----------------------------------------------------------
-# 3) MAIN
+# 3) Generate Detailed Analysis Report
+# -----------------------------------------------------------
+
+def generate_analysis_report(opportunities_df, original_df):
+    """
+    Generate a detailed analysis report with additional insights
+    """
+    if len(opportunities_df) == 0:
+        return "No strong option buying opportunities identified today."
+    
+    report = []
+    report.append("OPTION BUYING OPPORTUNITIES REPORT")
+    report.append("=" * 50)
+    report.append(f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report.append(f"Total opportunities found: {len(opportunities_df)}")
+    report.append("")
+    
+    # Group by recommendation type
+    call_opportunities = opportunities_df[opportunities_df['recommendation'] == 'BUY CALL']
+    put_opportunities = opportunities_df[opportunities_df['recommendation'] == 'BUY PUT']
+    
+    report.append(f"CALL Buying Opportunities: {len(call_opportunities)}")
+    report.append(f"PUT Buying Opportunities: {len(put_opportunities)}")
+    report.append("")
+    
+    # Strong signals first
+    strong_signals = opportunities_df[opportunities_df['signal_strength'] == 'Strong']
+    if len(strong_signals) > 0:
+        report.append("🔥 STRONG SIGNALS (Higher Confidence):")
+        report.append("-" * 40)
+        for _, opp in strong_signals.iterrows():
+            report.append(f"• {opp['underlying']}: {opp['recommendation']}")
+            report.append(f"  Price: {opp['future_price']:.2f} | Momentum: {opp['momentum']:.2f}")
+            report.append(f"  OI Change: {opp['oi_change']:+.0f} | Volume Spike: {opp['volume_spike']:.1%}")
+            report.append(f"  Reason: {opp['reason']}")
+            report.append(f"  Suggested: {opp['suggested_strikes']}")
+            report.append("")
+    
+    # Moderate signals
+    moderate_signals = opportunities_df[opportunities_df['signal_strength'] == 'Moderate']
+    if len(moderate_signals) > 0:
+        report.append("⚠️ MODERATE SIGNALS (Lower Confidence):")
+        report.append("-" * 40)
+        for _, opp in moderate_signals.iterrows():
+            report.append(f"• {opp['underlying']}: {opp['recommendation']}")
+            report.append(f"  Price: {opp['future_price']:.2f} | Momentum: {opp['momentum']:.2f}")
+            report.append(f"  OI Change: {opp['oi_change']:+.0f} | Volume Spike: {opp['volume_spike']:.1%}")
+            report.append(f"  Reason: {opp['reason']}")
+            report.append(f"  Suggested: {opp['suggested_strikes']}")
+            report.append("")
+    
+    # Additional market insights
+    total_futures = len(original_df[original_df['TckrSymb'].str.endswith('FUT', na=False)])
+    total_options = len(original_df) - total_futures
+    
+    report.append("MARKET OVERVIEW:")
+    report.append("-" * 40)
+    report.append(f"Total Futures Contracts: {total_futures}")
+    report.append(f"Total Options Contracts: {total_options}")
+    report.append(f"Opportunity Ratio: {len(opportunities_df)/total_futures:.1%} of futures show strong signals")
+    
+    return "\n".join(report)
+
+
+# -----------------------------------------------------------
+# 4) MAIN
 # -----------------------------------------------------------
 
 def main():
@@ -121,13 +276,34 @@ def main():
     print("Rows:", len(df))
     print("Columns:", list(df.columns))
 
-    print("Computing signals...")
-    df = compute_signals(df)
-
-    out_file = f"{OUT_DIR}/signal_{datetime.date.today()}.csv"
-    df.to_csv(out_file, index=False)
-
-    print("Saved:", out_file)
+    print("Identifying option buying opportunities...")
+    opportunities_df = identify_option_opportunities(df)
+    
+    # Save opportunities to CSV
+    if len(opportunities_df) > 0:
+        opportunities_csv = f"{OUT_DIR}/option_opportunities_{datetime.date.today()}.csv"
+        opportunities_df.to_csv(opportunities_csv, index=False)
+        print(f"Saved opportunities: {opportunities_csv}")
+        
+        # Generate and save analysis report
+        report = generate_analysis_report(opportunities_df, df)
+        report_file = f"{OUT_DIR}/option_analysis_report_{datetime.date.today()}.txt"
+        with open(report_file, 'w') as f:
+            f.write(report)
+        print(f"Saved analysis report: {report_file}")
+        
+        # Print report to console
+        print("\n" + "="*60)
+        print(report)
+        print("="*60)
+    else:
+        print("No option buying opportunities identified today.")
+        
+        # Save empty report for tracking
+        report_file = f"{OUT_DIR}/option_analysis_report_{datetime.date.today()}.txt"
+        with open(report_file, 'w') as f:
+            f.write("No option buying opportunities identified today.")
+        print(f"Saved empty report: {report_file}")
 
 
 # -----------------------------------------------------------
