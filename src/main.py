@@ -1,58 +1,69 @@
 import pandas as pd
+import zipfile
+import requests
+import io
 import json
-from fetch_bhavcopy import fetch_bhavcopy
+from datetime import datetime, timedelta
 
-def compute_signals(df):
-    """
-    Compute long/short buildup from bhavcopy CSV dataframe.
-    CSV contains: SYMBOL, EXPIRY_DT, OPTION_TYP, STRIKE_PR, OPEN_INT, CHG_IN_OI, VOL, SETTLE_PR, etc.
-    """
+BASE_URL = "https://archives.nseindia.com/content/fo/"
 
-    # Ensure columns exist
-    required = ["SYMBOL", "EXPIRY_DT", "OPTION_TYP", "STRIKE_PR", "OPEN_INT", "CHG_IN_OI", "VOL", "SETTLE_PR"]
-    for col in required:
-        if col not in df.columns:
-            print("Missing column:", col)
-            return {}
+def download_latest_bhavcopy():
+    today = datetime.today()
 
-    df["SIGNAL"] = ""
+    for i in range(0, 5):   # last 5 days
+        dt = today - timedelta(days=i)
+        fname = f"BhavCopy_NSE_FO_0_0_0_{dt.strftime('%Y%m%d')}_F_0000.csv.zip"
+        url = BASE_URL + fname
 
-    for i in df.index:
-        oi = df.at[i, "OPEN_INT"]
-        change = df.at[i, "CHG_IN_OI"]
-        volume = df.at[i, "VOL"]
+        print("Trying:", url)
+        r = requests.get(url)
 
-        # Long Buildup
-        if change > 0 and volume > 0:
-            df.at[i, "SIGNAL"] = "Long Buildup"
+        if r.status_code == 200:
+            print("Downloaded:", url)
+            return r.content
 
-        # Short Buildup
-        if change < 0 and volume > 0:
-            df.at[i, "SIGNAL"] = "Short Buildup"
+    raise Exception("No valid BhavCopy found in last 5 days")
 
-        # Long Unwinding
-        if change < 0 and volume < 0:
-            df.at[i, "SIGNAL"] = "Long Unwinding"
-
-        # Short Covering
-        if change > 0 and volume < 0:
-            df.at[i, "SIGNAL"] = "Short Covering"
-
+def extract_csv(zip_bytes):
+    z = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    csv_name = z.namelist()[0]
+    print("Extracting:", csv_name)
+    df = pd.read_csv(z.open(csv_name))
     return df
 
+def compute_signals(df):
+
+    required_cols = [
+        "TckrSymb", "FinInstrmTp", "XpryDt", "FinInstrmActnStrkPric",
+        "OptnTp", "OpnIntrst", "ChngInOpnIntrst", "TtlTradgVol",
+        "LastPric", "ClsPric"
+    ]
+
+    for col in required_cols:
+        if col not in df.columns:
+            raise Exception(f"Missing column: {col}")
+
+    df["OI_Buildup"] = df["ChngInOpnIntrst"]
+    df["Volume_Spike"] = df["TtlTradgVol"]
+    df["Price_Change"] = df["LastPric"] - df["ClsPric"]
+
+    return df
 
 def save_outputs(df):
     df.to_csv("fo_latest.csv", index=False)
 
-    j = df[["SYMBOL", "EXPIRY_DT", "OPTION_TYP", "STRIKE_PR", "OPEN_INT", "CHG_IN_OI", "VOL", "SIGNAL"]].to_dict(orient="records")
-    
-    with open("fo_signals.json", "w") as f:
-        json.dump(j, f, indent=2)
+    summary = df[["TckrSymb", "XpryDt", "FinInstrmActnStrkPric", "OptnTp",
+                  "OpnIntrst", "ChngInOpnIntrst", "TtlTradgVol",
+                  "Price_Change"]].head(50)
 
+    with open("fo_signal.json", "w") as f:
+        json.dump(summary.to_dict(orient="records"), f, indent=2)
 
 def main():
     print("Fetching latest NSE F&O bhavcopy…")
-    df = fetch_bhavcopy()
+    zip_data = download_latest_bhavcopy()
+    df = extract_csv(zip_data)
+    print("Rows:", len(df))
 
     print("Computing signals…")
     df = compute_signals(df)
@@ -60,11 +71,6 @@ def main():
     print("Saving CSV + JSON…")
     save_outputs(df)
 
-    print("Done! Files created:")
-    print(" - fo_latest.csv")
-    print(" - fo_signals.json")
-
-
 if __name__ == "__main__":
     main()
-  
+    
