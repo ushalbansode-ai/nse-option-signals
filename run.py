@@ -3,7 +3,16 @@
 Simple runner script for the option strategy analysis
 """
 
-from src.main import main
+import sys
+import os
 
-if __name__ == "__main__":
+# Add src to path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+try:
+    from src.main import main
+    print("🚀 Starting NSE Option Strategy Analysis...")
     main()
+except Exception as e:
+    print(f"❌ Error: {e}")
+    sys.exit(1)
