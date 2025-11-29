@@ -198,8 +198,8 @@ class ReportGenerator:
     """Generate data quality analysis report"""
     report = []
     report.append("DATA QUALITY ANALYSIS REPORT")
-    report.append("=" * 40)
-    report.append(f"Date: {self.today}")  # Fixed: (self.today) → {self.today}
+    report.append("=" * 40)  # Fixed: removed extra quote
+    report.append(f"Date: {self.today}")  # Fixed: removed extra parenthesis
     report.append("")
 
     if len(opportunities_df) > 0:
@@ -209,15 +209,15 @@ class ReportGenerator:
 
         report.append("QUALITY DISTRIBUTION:")
         for quality, count in by_quality.items():
-            report.append(f"- {quality}: {count}")  # Fixed: (quality) → {quality}, (count) → {count}
+            report.append(f"- {quality}: {count}")  # Fixed: removed extra quote
 
         report.append("")
         report.append("CONFIDENCE DISTRIBUTION:")
         for confidence, count in by_confidence.items():
-            report.append(f"- {confidence}: {count}")  # Fixed: (confidence) → {confidence}, (count) → {count}, removed extra "
+            report.append(f"- {confidence}: {count}")  # Fixed: removed extra quote
 
         report.append("")
-        report.append(f"With Historical Data: {historical_count}/{len(opportunities_df)}")  # Fixed
+        report.append(f"With Historical Data: {historical_count}/{len(opportunities_df)}")  # Fixed: capital W, fixed brace
         report.append("")
         report.append("RECOMMENDATION:")
         if historical_count > 0:
