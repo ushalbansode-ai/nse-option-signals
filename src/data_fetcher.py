@@ -1,63 +1,99 @@
 """
-Data fetching module for NSE bhavcopy
+Enhanced Data Fetcher for NSE Futures & Options Analysis
 """
 
-import os
 import requests
+import pandas as pd
+import os
 import zipfile
-import datetime
-from config.settings import BASE_DIR
+from datetime import datetime, timedelta
+from config.settings import RAW_DATA_DIR, NSE_BHAVCOPY_BASE_URL, NSE_BHAVCOPY_FILENAME_FORMAT
 
 class DataFetcher:
     def __init__(self):
-        self.base_url = (
-            "https://archives.nseindia.com/content/fo/"
-            "BhavCopy_NSE_FO_0_0_0_{date}_F_0000.csv.zip"
-        )
+        self.raw_data_dir = RAW_DATA_DIR
+        self.current_date = None
     
     def fetch_latest_bhavcopy(self):
-        """Fetch latest derivatives bhavcopy from NSE"""
-        print("Fetching latest bhavcopy...")
-
-        today = datetime.date.today()
-        tried = []
-
-        for i in range(0, 4):
-            d = today - datetime.timedelta(days=i)
-            date_str = d.strftime("%Y%m%d")
-
-            url = self.base_url.format(date=date_str)
-            tried.append(url)
-
-            print(f"Trying: {url}")
-
-            try:
-                r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-
-                if r.status_code == 200:
-                    zip_path = f"{BASE_DIR}/raw/Bhav_{date_str}.zip"
-                    os.makedirs(os.path.dirname(zip_path), exist_ok=True)
-                    
-                    with open(zip_path, "wb") as f:
-                        f.write(r.content)
-                    print(f"Downloaded: {url}")
-
-                    # Extract ZIP
-                    with zipfile.ZipFile(zip_path, "r") as z:
-                        z.extractall(f"{BASE_DIR}/raw/")
-                        extracted_file = z.namelist()[0]
-
-                    print(f"Extracted: {extracted_file}")
-                    return f"{BASE_DIR}/raw/{extracted_file}"
-
-                else:
-                    print(f"Failed: {r.status_code}")
-
-            except requests.RequestException as e:
-                print(f"Request failed: {e}")
-
-        print("Tried URLs:")
-        for u in tried:
-            print(f" - {u}")
-
-        raise Exception("No bhavcopy found for last 4 days")
+        """Fetch the latest NSE bhavcopy data"""
+        self.current_date = datetime.now().date()
+        
+        # For weekends, use Friday's data
+        if self.current_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            days_back = self.current_date.weekday() - 4
+            self.current_date = self.current_date - timedelta(days=days_back)
+            print(f"    Weekend detected. Using Friday's data: {self.current_date}")
+        
+        print(f"    ANALYSIS DATE: {self.current_date}")
+        
+        # Try current date first, then previous trading days
+        dates_to_try = [self.current_date]
+        
+        # Add previous trading days (max 5 days back)
+        for i in range(1, 6):
+            prev_date = self.current_date - timedelta(days=i)
+            if prev_date.weekday() < 5:  # Monday-Friday
+                dates_to_try.append(prev_date)
+        
+        for attempt_date in dates_to_try:
+            csv_file = self.download_bhavcopy(attempt_date)
+            if csv_file:
+                return csv_file
+        
+        print("    ❌ Failed to download bhavcopy after multiple attempts")
+        return None
+    
+    def download_bhavcopy(self, date):
+        """Download bhavcopy for specific date"""
+        date_str = date.strftime('%Y%m%d')
+        filename = NSE_BHAVCOPY_FILENAME_FORMAT.format(date=date_str)
+        url = f"{NSE_BHAVCOPY_BASE_URL}/{filename}"
+        
+        print(f"    Trying: {url}")
+        
+        try:
+            # Download the file
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            
+            # Save zip file
+            zip_path = os.path.join(self.raw_data_dir, filename)
+            with open(zip_path, 'wb') as f:
+                f.write(response.content)
+            
+            print(f"    Downloaded: {url}")
+            
+            # Extract CSV
+            csv_file = self.extract_csv(zip_path, date_str)
+            return csv_file
+            
+        except requests.exceptions.RequestException as e:
+            print(f"    Failed: {e.response.status_code if hasattr(e, 'response') else 'Network error'}")
+            return None
+    
+    def extract_csv(self, zip_path, date_str):
+        """Extract CSV from zip file"""
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Get the CSV filename from zip
+                csv_filename = zip_ref.namelist()[0]
+                
+                # Extract to raw data directory
+                zip_ref.extract(csv_filename, self.raw_data_dir)
+                
+                # Rename to standardized name
+                extracted_path = os.path.join(self.raw_data_dir, csv_filename)
+                standardized_name = f"BhavCopy_NSE_FO_{date_str}.csv"
+                standardized_path = os.path.join(self.raw_data_dir, standardized_name)
+                
+                os.rename(extracted_path, standardized_path)
+                
+                # Clean up zip file
+                os.remove(zip_path)
+                
+                print(f"    Extracted: {standardized_name}")
+                return standardized_path
+                
+        except Exception as e:
+            print(f"    ❌ Error extracting zip: {e}")
+            return None
