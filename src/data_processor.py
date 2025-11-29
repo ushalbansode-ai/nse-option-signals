@@ -122,7 +122,7 @@ class DataProcessor:
         # Get list of processed data files
         processed_files = []
         if os.path.exists(self.processed_data_dir):
-            processed_files = [f for f in os.listdir(self.processed_data_dir) if f.endswith('.parquet')]
+            processed_files = [f for f in os.listdir(self.processed_data_dir) if f.endswith('.csv')]
         
         if not processed_files:
             print("    No previous trading data found")
@@ -136,10 +136,10 @@ class DataProcessor:
         try:
             # Load the latest processed data
             latest_path = os.path.join(self.processed_data_dir, latest_file)
-            combined_data = pd.read_parquet(latest_path)
+            combined_data = pd.read_csv(latest_path)
             
             # Extract date from filename
-            file_date = latest_file.replace('nse_fo_', '').replace('.parquet', '')
+            file_date = latest_file.replace('nse_fo_', '').replace('.csv', '')
             
             # Separate futures and options
             previous_futures = combined_data[combined_data['instrument_type'] == 'futures'].copy()
@@ -170,11 +170,11 @@ class DataProcessor:
             
             # Generate filename with current date
             today = datetime.now().strftime('%Y%m%d')
-            filename = f"nse_fo_{today}.parquet"
+            filename = f"nse_fo_{today}.csv"
             filepath = os.path.join(self.processed_data_dir, filename)
             
-            # Save as parquet
-            combined_data.to_parquet(filepath, index=False)
+            # Save as CSV
+            combined_data.to_csv(filepath, index=False)
             print(f"    Saved historical data for {today}")
             
         except Exception as e:
