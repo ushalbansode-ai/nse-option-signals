@@ -5,7 +5,8 @@ Enhanced Main Entry Point with Previous Day Data Analysis
 
 import sys
 import os
-import datetime
+import pandas as pd
+from datetime import datetime, date, timedelta
 
 from src.data_fetcher import DataFetcher
 from src.data_processor import DataProcessor
@@ -13,60 +14,98 @@ from src.combined_analyzer import CombinedAnalyzer
 from src.report_generator import ReportGenerator
 from src.historical_manager import HistoricalManager
 from config.settings import BASE_DIR, OUT_DIR
-def run_enhanced_analysis():
-    """Enhanced main analysis function with holiday handling"""
-    calendar = SmartTradingCalendar()
-    parser = EnhancedDataParser()
-    
-    # Get the appropriate analysis date
-    analysis_date, date_status = calendar.get_analysis_date()
-    analysis_date_str = analysis_date.strftime('%Y-%m-%d')
-    
-    print(f"📅 ANALYSIS DATE: {analysis_date_str} ({date_status})")
-    print(f"📅 TODAY: {datetime.now().strftime('%Y-%m-%d')}")
-    
-    # Step 1: Download data for analysis date
-    print("💡 Step 1: Fetching bhavcopy...")
-    
-    # Replace your existing download function call with:
-    csv_path = download_bhavcopy(analysis_date)  # Make sure your download function accepts a date parameter
-    
-    if not csv_path or not os.path.exists(csv_path):
-        print("❌ Failed to download data. Market may be closed.")
-        return
-    
-    # Step 2: Process current day data
-    print("💡 Step 2: Processing data...")
-    try:
-        df = pd.read_csv(csv_path)
-        print(f"📈 Loaded {len(df)} rows, {len(df.columns)} columns")
+
+class SmartTradingCalendar:
+    def __init__(self):
+        self.trading_days = []
         
-        # Debug data structure
-        parser.debug_data_structure(df)
+    def get_smart_analysis_date(self):
+        """Smart date selection for analysis"""
+        today = datetime.now()
         
-        # Parse instruments
-        futures_df, options_df = parser.parse_instruments(df)
+        # If today is Monday, use Friday's data
+        if today.weekday() == 0:  # Monday
+            friday = today - timedelta(days=3)
+            print(f"📅 Monday detected. Using Friday's data: {friday.strftime('%Y-%m-%d')}")
+            return friday.date()
         
-        print(f"✅ Futures contracts found: {len(futures_df)}")
-        print(f"✅ Options contracts found: {len(options_df)}")
+        # If today is Tuesday-Friday, use previous day
+        elif today.weekday() in [1, 2, 3, 4]:  # Tue-Fri
+            prev_day = today - timedelta(days=1)
+            # If previous day was weekend, use Friday
+            if prev_day.weekday() >= 5:  # Weekend
+                friday = today - timedelta(days=(today.weekday() + 3) % 7)
+                print(f"📅 Weekend detected. Using Friday's data: {friday.strftime('%Y-%m-%d')}")
+                return friday.date()
+            print(f"📅 Using previous day data: {prev_day.strftime('%Y-%m-%d')}")
+            return prev_day.date()
         
-        if len(futures_df) > 0:
-            print("📊 Futures sample symbols:", futures_df['Symbol'].head(3).tolist() if 'Symbol' in futures_df.columns else "N/A")
-        if len(options_df) > 0:
-            print("📊 Options sample symbols:", options_df['Symbol'].head(3).tolist() if 'Symbol' in options_df.columns else "N/A")
-            
-    except Exception as e:
-        print(f"❌ Error processing data: {e}")
-        return
+        else:  # Weekend
+            friday = today - timedelta(days=(today.weekday() - 4) % 7)
+            print(f"📅 Weekend detected. Using Friday's data: {friday.strftime('%Y-%m-%d')}")
+            return friday.date()
+
+class EnhancedDataParser:
+    def __init__(self):
+        self.futures_keywords = ['FUT', 'FUTSTK', 'FUTIDX']
+        self.options_keywords = ['OPT', 'OPTSTK', 'OPTIDX']
     
-    # Continue with your existing analysis logic below...
-    # [YOUR EXISTING ANALYSIS CODE CONTINUES HERE...]
+    def parse_instruments(self, df):
+        """Parse futures and options contracts from dataframe"""
+        futures_df = pd.DataFrame()
+        options_df = pd.DataFrame()
+        
+        if df.empty:
+            return futures_df, options_df
+        
+        # Try different column names for instrument type
+        instrument_columns = ['Instrument', 'INSTRUMENT', 'instrument', 'SECURITY TYPE']
+        instrument_col = None
+        
+        for col in instrument_columns:
+            if col in df.columns:
+                instrument_col = col
+                break
+        
+        if instrument_col is None:
+            print("❌ No instrument column found. Available columns:", df.columns.tolist())
+            return futures_df, options_df
+        
+        print(f"🔍 Using instrument column: {instrument_col}")
+        print(f"📊 Unique instruments: {df[instrument_col].unique()}")
+        
+        # Filter futures
+        for keyword in self.futures_keywords:
+            mask = df[instrument_col].astype(str).str.contains(keyword, case=False, na=False)
+            if mask.any():
+                futures_df = pd.concat([futures_df, df[mask]], ignore_index=True)
+        
+        # Filter options
+        for keyword in self.options_keywords:
+            mask = df[instrument_col].astype(str).str.contains(keyword, case=False, na=False)
+            if mask.any():
+                options_df = pd.concat([options_df, df[mask]], ignore_index=True)
+        
+        # Remove duplicates
+        futures_df = futures_df.drop_duplicates()
+        options_df = options_df.drop_duplicates()
+        
+        return futures_df, options_df
+
 def main():
     """Enhanced Main execution with Historical Data Analysis"""
     print("🚀 NSE ENHANCED Combined Futures & Options Analysis Starting...")
     print("   📊 Using PREVIOUS DAY + CURRENT DAY data for accurate signals")
     
     try:
+        # Initialize smart calendar and parser
+        calendar = SmartTradingCalendar()
+        parser = EnhancedDataParser()
+        
+        # Get smart analysis date
+        current_date = calendar.get_smart_analysis_date()
+        print(f"📅 ANALYSIS DATE: {current_date}")
+        
         # Initialize components
         fetcher = DataFetcher()
         processor = DataProcessor()
@@ -74,18 +113,27 @@ def main():
         analyzer = CombinedAnalyzer(historical_mgr)
         reporter = ReportGenerator()
         
-        # Step 1: Fetch latest data
-        print("\n📥 Step 1: Fetching latest bhavcopy...")
-        csv_path = fetcher.fetch_latest_bhavcopy()
+        # Step 1: Fetch latest data for the analysis date
+        print("\n📥 Step 1: Fetching bhavcopy...")
+        csv_path = fetcher.fetch_latest_bhavcopy()  # This might need modification to accept date
         
-        # Step 2: Process current day data
-        print("\n🔧 Step 2: Processing current day data...")
+        # Step 2: Process current day data with enhanced parsing
+        print("\n🔧 Step 2: Processing data...")
         df = processor.load_data(csv_path)
-        futures_df, options_df = processor.separate_futures_options(df)
         
-        # Step 3: Load PREVIOUS day data FIRST
+        # Use enhanced parser for better instrument detection
+        futures_df, options_df = parser.parse_instruments(df)
+        
+        # Fallback to original processor if enhanced parser finds nothing
+        if len(futures_df) == 0 and len(options_df) == 0:
+            print("🔄 Using original parser as fallback...")
+            futures_df, options_df = processor.separate_futures_options(df)
+        
+        print(f"✅ Futures contracts found: {len(futures_df)}")
+        print(f"✅ Options contracts found: {len(options_df)}")
+        
+        # Step 3: Load PREVIOUS day data
         print("\n📚 Step 3: Loading PREVIOUS day data for comparison...")
-        current_date = datetime.date.today()
         prev_futures, prev_options, prev_date = historical_mgr.load_previous_data(current_date)
         
         if prev_futures is not None:
@@ -94,12 +142,13 @@ def main():
         else:
             print("⚠️ PREVIOUS DAY DATA: Not available (first run or weekend)")
             historical_status = "UNAVAILABLE"
+            prev_date = None
         
         # Step 4: Save CURRENT day data for future use
         print("\n💾 Step 4: Saving CURRENT day data for future analysis...")
         historical_mgr.save_daily_data(futures_df, options_df, current_date)
         
-        # Step 5: Run ENHANCED COMBINED analysis (Previous + Current)
+        # Step 5: Run ENHANCED COMBINED analysis
         print("\n🎯 Step 5: Running ENHANCED COMBINED ANALYSIS...")
         print("   📅 Comparing PREVIOUS vs CURRENT day data...")
         print("   📈 Analyzing Futures trends with historical context...")
