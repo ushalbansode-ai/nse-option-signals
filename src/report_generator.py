@@ -195,40 +195,40 @@ class ReportGenerator:
         print(f"📄 Enhanced detailed report saved: {report_path}")
     
     def generate_data_quality_report(self, opportunities_df):
-    """Generate data quality analysis report"""
-    report = []
-    report.append("DATA QUALITY ANALYSIS REPORT")
-    report.append("=" * 40)  # Fixed: removed extra quote
-    report.append(f"Date: {self.today}")  # Fixed: removed extra parenthesis
-    report.append("")
-
-    if len(opportunities_df) > 0:
-        by_quality = opportunities_df['data_quality'].value_counts()
-        by_confidence = opportunities_df['confidence'].value_counts()
-        historical_count = opportunities_df['has_historical_data'].sum()
-
-        report.append("QUALITY DISTRIBUTION:")
-        for quality, count in by_quality.items():
-            report.append(f"- {quality}: {count}")  # Fixed: removed extra quote
-
+        """Generate data quality analysis report"""
+        report = []
+        report.append("DATA QUALITY ANALYSIS REPORT")
+        report.append("=" * 40)
+        report.append(f"Date: {self.today}")
         report.append("")
-        report.append("CONFIDENCE DISTRIBUTION:")
-        for confidence, count in by_confidence.items():
-            report.append(f"- {confidence}: {count}")  # Fixed: removed extra quote
 
-        report.append("")
-        report.append(f"With Historical Data: {historical_count}/{len(opportunities_df)}")  # Fixed: capital W, fixed brace
-        report.append("")
-        report.append("RECOMMENDATION:")
-        if historical_count > 0:
-            report.append("Focus on HIGH quality signals with historical data")
+        if len(opportunities_df) > 0:
+            by_quality = opportunities_df['data_quality'].value_counts()
+            by_confidence = opportunities_df['confidence'].value_counts()
+            historical_count = opportunities_df['has_historical_data'].sum()
+
+            report.append("QUALITY DISTRIBUTION:")
+            for quality, count in by_quality.items():
+                report.append(f"- {quality}: {count}")
+
+            report.append("")
+            report.append("CONFIDENCE DISTRIBUTION:")
+            for confidence, count in by_confidence.items():
+                report.append(f"- {confidence}: {count}")
+
+            report.append("")
+            report.append(f"With Historical Data: {historical_count}/{len(opportunities_df)}")
+            report.append("")
+            report.append("RECOMMENDATION:")
+            if historical_count > 0:
+                report.append("Focus on HIGH quality signals with historical data")
+            else:
+                report.append("All signals based on current day data only")
+                report.append("Run again tomorrow for historical comparison")
         else:
-            report.append("All signals based on current day data only")
-            report.append("Run again tomorrow for historical comparison")
-    else:
-        report.append("No opportunities to analyze")
+            report.append("No opportunities to analyze")
 
-    return "\n".join(report)
+        return "\n".join(report)
     
     def save_quality_report(self, quality_report):
         """Save quality report"""
