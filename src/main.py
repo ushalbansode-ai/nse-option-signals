@@ -13,7 +13,54 @@ from src.combined_analyzer import CombinedAnalyzer
 from src.report_generator import ReportGenerator
 from src.historical_manager import HistoricalManager
 from config.settings import BASE_DIR, OUT_DIR
-
+def run_enhanced_analysis():
+    """Enhanced main analysis function with holiday handling"""
+    calendar = SmartTradingCalendar()
+    parser = EnhancedDataParser()
+    
+    # Get the appropriate analysis date
+    analysis_date, date_status = calendar.get_analysis_date()
+    analysis_date_str = analysis_date.strftime('%Y-%m-%d')
+    
+    print(f"📅 ANALYSIS DATE: {analysis_date_str} ({date_status})")
+    print(f"📅 TODAY: {datetime.now().strftime('%Y-%m-%d')}")
+    
+    # Step 1: Download data for analysis date
+    print("💡 Step 1: Fetching bhavcopy...")
+    
+    # Replace your existing download function call with:
+    csv_path = download_bhavcopy(analysis_date)  # Make sure your download function accepts a date parameter
+    
+    if not csv_path or not os.path.exists(csv_path):
+        print("❌ Failed to download data. Market may be closed.")
+        return
+    
+    # Step 2: Process current day data
+    print("💡 Step 2: Processing data...")
+    try:
+        df = pd.read_csv(csv_path)
+        print(f"📈 Loaded {len(df)} rows, {len(df.columns)} columns")
+        
+        # Debug data structure
+        parser.debug_data_structure(df)
+        
+        # Parse instruments
+        futures_df, options_df = parser.parse_instruments(df)
+        
+        print(f"✅ Futures contracts found: {len(futures_df)}")
+        print(f"✅ Options contracts found: {len(options_df)}")
+        
+        if len(futures_df) > 0:
+            print("📊 Futures sample symbols:", futures_df['Symbol'].head(3).tolist() if 'Symbol' in futures_df.columns else "N/A")
+        if len(options_df) > 0:
+            print("📊 Options sample symbols:", options_df['Symbol'].head(3).tolist() if 'Symbol' in options_df.columns else "N/A")
+            
+    except Exception as e:
+        print(f"❌ Error processing data: {e}")
+        return
+    
+    # Continue with your existing analysis logic below...
+    # [YOUR EXISTING ANALYSIS CODE CONTINUES HERE...]
 def main():
     """Enhanced Main execution with Historical Data Analysis"""
     print("🚀 NSE ENHANCED Combined Futures & Options Analysis Starting...")
