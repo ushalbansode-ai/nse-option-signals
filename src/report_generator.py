@@ -147,9 +147,11 @@ class SmartTradingCalendar:
         else:
             return last_trading_day, "LAST_TRADING_DAY"
 
+from datetime import datetime, date
+
 class ReportGenerator:
     def __init__(self):
-        self.today = datetime.date.today()
+        self.today = date.today()  # Fixed: use date.today() instead of datetime.date.today()
     
     def generate_enhanced_reports(self, opportunities_df, futures_df, options_df, current_date, prev_date, historical_status):
         """Generate enhanced reports with historical data context"""
