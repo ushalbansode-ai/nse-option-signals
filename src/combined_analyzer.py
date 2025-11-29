@@ -15,12 +15,17 @@ class CombinedAnalyzer:
     def analyze_option_chain(self, chain_df):
         """Analyze option chain for a single underlying symbol"""
         try:
+            # Create a copy to avoid SettingWithCopyWarning
+            chain_df = chain_df.copy()
+            
             # Convert symbol to string to handle numeric underlying symbols
-            if 'symbol' in chain_df.columns:
-                chain_df['symbol'] = chain_df['symbol'].astype(str)
+            chain_df.loc[:, 'symbol'] = chain_df['symbol'].astype(str)
             
             # Check if we have both CALL and PUT data
-            if 'call' not in chain_df['optionType'].str.lower().values or 'put' not in chain_df['optionType'].str.lower().values:
+            call_mask = chain_df['optionType'].str.lower() == 'call'
+            put_mask = chain_df['optionType'].str.lower() == 'put'
+            
+            if not call_mask.any() or not put_mask.any():
                 return None
             
             # Group by strike and option type
@@ -29,10 +34,10 @@ class CombinedAnalyzer:
                 'symbol': chain_df['symbol'].iloc[0] if 'symbol' in chain_df.columns else 'UNKNOWN',
                 'total_strikes': len(strikes),
                 'max_pain': self.calculate_max_pain(chain_df),
-                'call_oi': chain_df[chain_df['optionType'].str.lower() == 'call']['openInterest'].sum(),
-                'put_oi': chain_df[chain_df['optionType'].str.lower() == 'put']['openInterest'].sum(),
-                'call_volume': chain_df[chain_df['optionType'].str.lower() == 'call']['volume'].sum(),
-                'put_volume': chain_df[chain_df['optionType'].str.lower() == 'put']['volume'].sum(),
+                'call_oi': chain_df[call_mask]['openInterest'].sum(),
+                'put_oi': chain_df[put_mask]['openInterest'].sum(),
+                'call_volume': chain_df[call_mask]['volume'].sum(),
+                'put_volume': chain_df[put_mask]['volume'].sum(),
             }
             return chain_analysis
         except Exception as e:
@@ -80,7 +85,11 @@ class CombinedAnalyzer:
         for symbol in futures_symbols:
             try:
                 # Get futures data for this symbol
-                current_future = futures_data[futures_data['symbol'] == symbol].iloc[0]
+                symbol_futures = futures_data[futures_data['symbol'] == symbol]
+                if len(symbol_futures) == 0:
+                    continue
+                    
+                current_future = symbol_futures.iloc[0]
                 
                 # Get options chain for this symbol
                 symbol_options = options_data[options_data['symbol'] == symbol]
