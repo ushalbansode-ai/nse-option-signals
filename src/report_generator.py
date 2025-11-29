@@ -3,9 +3,149 @@ Enhanced Report Generator for Combined Futures + Options Analysis
 with Historical Data Context
 """
 
-import datetime
 import pandas as pd
 from config.settings import OUT_DIR
+
+from datetime import datetime, timedelta
+import os
+import requests
+from typing import Optional, Tuple
+class EnhancedDataParser:
+    def __init__(self):
+        self.futures_keywords = ['FUT', 'FUTSTK', 'FUTIDX']
+        self.options_keywords = ['OPT', 'OPTSTK', 'OPTIDX']
+    
+    def parse_instruments(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Parse futures and options contracts from dataframe"""
+        futures_df = pd.DataFrame()
+        options_df = pd.DataFrame()
+        
+        if df.empty:
+            return futures_df, options_df
+        
+        # Try different column names for instrument type
+        instrument_columns = ['Instrument', 'INSTRUMENT', 'instrument', 'SECURITY TYPE']
+        instrument_col = None
+        
+        for col in instrument_columns:
+            if col in df.columns:
+                instrument_col = col
+                break
+        
+        if instrument_col is None:
+            print("❌ No instrument column found. Available columns:", df.columns.tolist())
+            return futures_df, options_df
+        
+        print(f"🔍 Using instrument column: {instrument_col}")
+        print(f"📊 Unique instruments: {df[instrument_col].unique()}")
+        
+        # Filter futures
+        for keyword in self.futures_keywords:
+            mask = df[instrument_col].astype(str).str.contains(keyword, case=False, na=False)
+            if mask.any():
+                futures_df = pd.concat([futures_df, df[mask]], ignore_index=True)
+        
+        # Filter options
+        for keyword in self.options_keywords:
+            mask = df[instrument_col].astype(str).str.contains(keyword, case=False, na=False)
+            if mask.any():
+                options_df = pd.concat([options_df, df[mask]], ignore_index=True)
+        
+        # Remove duplicates
+        futures_df = futures_df.drop_duplicates()
+        options_df = options_df.drop_duplicates()
+        
+        return futures_df, options_df
+    
+    def debug_data_structure(self, df: pd.DataFrame):
+        """Print debug information about data structure"""
+        print("🔍 DATA STRUCTURE DEBUG:")
+        print(f"📏 Shape: {df.shape}")
+        print(f"📋 Columns: {df.columns.tolist()}")
+        print(f"📊 Sample data:")
+        print(df.head(2))
+        print(f"🔢 Data types:")
+        print(df.dtypes)
+class SmartTradingCalendar:
+    def __init__(self):
+        self.trading_days = []
+        
+    def get_last_trading_day(self, current_date: Optional[datetime] = None) -> datetime:
+        """Get the last actual trading day with available data"""
+        if current_date is None:
+            current_date = datetime.now()
+        
+        # Try to find the last trading day by checking data availability
+        for days_back in range(1, 8):  # Check up to 1 week back
+            check_date = current_date - timedelta(days=days_back)
+            
+            # Skip weekends
+            if check_date.weekday() >= 5:  # Saturday (5) or Sunday (6)
+                continue
+                
+            # Check if we already have data for this date
+            if self.check_data_exists(check_date):
+                return check_date
+            
+            # Try to download data for this date to verify it's a trading day
+            if self.try_download_data(check_date):
+                return check_date
+        
+        # If no data found, return the last weekday
+        return self.get_last_weekday(current_date)
+    
+    def get_last_weekday(self, current_date: datetime) -> datetime:
+        """Get the last weekday (Mon-Fri)"""
+        for days_back in range(1, 7):
+            check_date = current_date - timedelta(days=days_back)
+            if check_date.weekday() < 5:  # Monday to Friday
+                return check_date
+        return current_date
+    
+    def check_data_exists(self, date: datetime) -> bool:
+        """Check if data file exists for given date"""
+        date_str = date.strftime('%Y%m%d')
+        expected_files = [
+            f"data/raw/BhavCopy_NSE_FO_0_0_{date_str}_F_0000.csv",
+            f"data/raw/BhavCopy_NSE_FO_0_0_0_{date_str}_F_0000.csv",
+            f"data/raw/BhavCopy_NSE_FO_0_0_0_0_{date_str}_F_0000.csv"
+        ]
+        return any(os.path.exists(f) for f in expected_files)
+    
+    def try_download_data(self, date: datetime) -> bool:
+        """Try to download data for a date to verify it's a trading day"""
+        date_str = date.strftime('%Y%m%d')
+        urls = [
+            f"https://archives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_{date_str}_F_0000.csv.zip",
+            f"https://archives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{date_str}_F_0000.csv.zip"
+        ]
+        
+        for url in urls:
+            try:
+                response = requests.head(url, timeout=10)
+                if response.status_code == 200:
+                    return True
+            except:
+                continue
+        return False
+
+    def get_analysis_date(self) -> Tuple[datetime, str]:
+        """Get the appropriate date for analysis and its status"""
+        today = datetime.now()
+        
+        # Check if today is a trading day
+        if today.weekday() < 5 and self.try_download_data(today):
+            return today, "CURRENT_DAY"
+        
+        # Find the last trading day
+        last_trading_day = self.get_last_trading_day(today)
+        
+        if last_trading_day.date() == today.date():
+            return last_trading_day, "CURRENT_DAY"
+        elif (today - last_trading_day).days == 1:
+            return last_trading_day, "PREVIOUS_DAY"
+        else:
+            return last_trading_day, "LAST_TRADING_DAY"
 
 class ReportGenerator:
     def __init__(self):
