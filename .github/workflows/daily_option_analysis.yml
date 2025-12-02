@@ -1,44 +1,73 @@
-name: Daily Combined Futures & Options Analysis
+name: Daily NSE Option Analysis
 
 on:
   schedule:
-    - cron: "00 14 * * 1-5"   # 19:30 IST ≈ 14:00 UTC, Monday-Friday
-  workflow_dispatch:          # Manual trigger
+    - cron: '30 8 * * 1-5'  # Runs at 2:00 PM IST (8:30 UTC) on weekdays
+  workflow_dispatch:         # Manual trigger
 
 jobs:
-  analyze:
+  run-analysis:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-          
-      - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
-          
-      - name: Create Output Directories
-        run: |
-          mkdir -p data/raw data/processed data/historical outputs/signals outputs/reports
-          
-      - name: Run Combined Futures & Options Analysis
-        run: |
-          python run.py
-          
-      - name: List Generated Files
-        run: |
-          echo "Generated files:"
-          find outputs/ -type f -name "*.csv" -o -name "*.txt" | sort
-          
-      - name: Commit and Push Results
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git add outputs/
-          git commit -m "Auto: Combined Futures+Options analysis for $(date +%Y-%m-%d)" || echo "No changes to commit"
-          git push || echo "Nothing to push"
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Cache historical data
+      uses: actions/cache@v3
+      id: data-cache
+      with:
+        path: data/processed
+        key: ${{ runner.os }}-nse-processed-data-${{ hashFiles('src/data_processor.py', 'run.py') }}
+        restore-keys: |
+          ${{ runner.os }}-nse-processed-data-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy requests
+    
+    - name: Create directories
+      run: |
+        mkdir -p data/raw
+        mkdir -p data/processed
+        mkdir -p outputs/signals
+        mkdir -p outputs/reports
+        echo "Directories created successfully"
+    
+    - name: Show cache status
+      run: |
+        if [ -d "data/processed" ]; then
+          echo "✅ Processed data directory exists"
+          ls -la data/processed/
+        else
+          echo "⚠️ Processed data directory not found (first run or cache miss)"
+        fi
+    
+    - name: Run analysis
+      run: python run.py
+    
+    - name: List generated files
+      run: |
+        echo "=== Generated Reports ==="
+        find outputs/ -type f -name "*.txt" -o -name "*.csv" | sort || echo "No reports found"
+        echo ""
+        echo "=== Historical Data Files ==="
+        find data/processed/ -type f -name "*.csv" 2>/dev/null | sort || echo "No historical data files"
+        echo ""
+        echo "=== Cache Info ==="
+        echo "Cache hit: ${{ steps.data-cache.outputs.cache-hit }}"
+    
+    - name: Commit and push results
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add outputs/
+        git status
+        git diff --cached --quiet || (git commit -m "Update NSE analysis reports $(date +'%Y-%m-%d %H:%M:%S')" && git push)
