@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
     
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -20,67 +21,229 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pandas numpy requests
+        pip install pandas numpy requests yfinance datetime python-dotenv
     
     - name: Create directories
       run: |
         mkdir -p data/raw
         mkdir -p data/processed
+        mkdir -p data/comparison
         mkdir -p outputs/signals
         mkdir -p outputs/reports
-        echo "Directories created successfully"
+        mkdir -p logs
+        echo "✅ Directories created successfully"
     
-    - name: Download previous historical data (if exists)
-      uses: actions/download-artifact@v4
-      continue-on-error: true  # This is for the STEP, not the action
+    - name: Download historical data (from previous run)
+      uses: dawidd6/action-download-artifact@v6
+      continue-on-error: true
       with:
-        name: xml-historical-data
+        workflow: daily_option_analysis.yml
+        name: nse-historical-data
         path: data/processed/
     
-    - name: Check downloaded historical data
+    - name: Check existing historical data
       run: |
-        echo "=== Checking downloaded historical data ==="
+        echo "=== Checking Historical Data ==="
+        echo ""
+        echo "📊 Historical files found:"
         if [ -d "data/processed" ]; then
-          echo "✅ Processed data directory exists"
-          echo ""
-          echo "=== Files in data/processed ==="
-          ls -la data/processed/
-          echo ""
-          echo "=== CSV files found ==="
-          find data/processed -name "*.csv" -type f | sort
+          count=$(find data/processed -name "*.csv" -type f | wc -l)
+          if [ $count -gt 0 ]; then
+            echo "✅ Found $count historical CSV files"
+            echo ""
+            echo "📁 Files:"
+            ls -la data/processed/*.csv 2>/dev/null || echo "No CSV files"
+            echo ""
+            echo "📅 Latest file dates:"
+            for file in data/processed/*.csv; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                echo "- $filename: $(stat -c %y "$file" 2>/dev/null | cut -d' ' -f1)"
+              fi
+            done
+          else
+            echo "⚠️ No historical CSV files found (first run?)"
+          fi
         else
-          echo "❌ No processed data directory found (first run)"
+          echo "❌ data/processed directory not found"
         fi
     
-    - name: Run analysis
+    - name: Run main analysis script
       run: python run.py
+      continue-on-error: false
     
-    - name: Upload new historical data
+    - name: Compare with yesterday's data
+      run: |
+        echo "=== Comparing Today vs Yesterday ==="
+        echo ""
+        
+        # Get today's date
+        TODAY=$(date +'%Y-%m-%d')
+        YESTERDAY=$(date -d "yesterday" +'%Y-%m-%d')
+        
+        echo "📅 Today: $TODAY"
+        echo "📅 Yesterday: $YESTERDAY"
+        echo ""
+        
+        # Check if we have yesterday's data
+        YESTERDAY_FILE=$(find data/processed -name "*${YESTERDAY}*.csv" -type f | head -1)
+        
+        if [ -f "$YESTERDAY_FILE" ]; then
+          echo "✅ Found yesterday's data: $(basename $YESTERDAY_FILE)"
+          echo ""
+          
+          # Find today's new data
+          TODAY_FILES=$(find data/processed -name "*${TODAY}*.csv" -type f)
+          
+          if [ -n "$TODAY_FILES" ]; then
+            echo "✅ Found today's data"
+            
+            # Create comparison directory
+            mkdir -p data/comparison
+            
+            # Run comparison logic (you can customize this)
+            echo "Running comparison analysis..."
+            
+            # Example: Create a simple comparison report
+            python3 -c "
+import pandas as pd
+import os
+from datetime import datetime
+
+# Get today and yesterday dates
+today = pd.Timestamp('$TODAY')
+yesterday = pd.Timestamp('$YESTERDAY')
+
+# Look for data files
+today_files = [f for f in os.listdir('data/processed') if '$TODAY' in f and f.endswith('.csv')]
+yesterday_files = [f for f in os.listdir('data/processed') if '$YESTERDAY' in f and f.endswith('.csv')]
+
+if today_files and yesterday_files:
+    # Read data (simplified - you should adjust based on your data structure)
+    try:
+        # Try to read the first file of each day
+        df_today = pd.read_csv(f'data/processed/{today_files[0]}')
+        df_yesterday = pd.read_csv(f'data/processed/{yesterday_files[0]}')
+        
+        # Basic comparison
+        comparison_report = []
+        comparison_report.append('=== NSE DATA COMPARISON REPORT ===')
+        comparison_report.append(f'Date: {today.date()}')
+        comparison_report.append(f'Comparing: {yesterday.date()} → {today.date()}')
+        comparison_report.append('')
+        comparison_report.append(f'Today\'s records: {len(df_today)}')
+        comparison_report.append(f'Yesterday\'s records: {len(df_yesterday)}')
+        comparison_report.append(f'Change: {len(df_today) - len(df_yesterday)} records')
+        
+        # Save comparison report
+        with open('outputs/comparison_report.txt', 'w') as f:
+            f.write('\n'.join(comparison_report))
+        
+        print('✅ Comparison report generated')
+        
+        # Generate signals based on comparison
+        signals = []
+        signals.append('=== SIGNALS GENERATED ===')
+        signals.append(f'Generated at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+        signals.append('')
+        
+        # Example signal logic (customize based on your data)
+        if len(df_today) > len(df_yesterday):
+            signals.append('📈 SIGNAL: Increased data volume detected')
+            signals.append('   Action: Consider bullish positions')
+        elif len(df_today) < len(df_yesterday):
+            signals.append('📉 SIGNAL: Decreased data volume detected')
+            signals.append('   Action: Consider bearish positions')
+        else:
+            signals.append('📊 SIGNAL: Stable data volume')
+            signals.append('   Action: Maintain current positions')
+        
+        # Save signals
+        with open('outputs/signals/daily_signals.txt', 'w') as f:
+            f.write('\n'.join(signals))
+        
+        print('✅ Signals generated')
+        
+    except Exception as e:
+        print(f'❌ Error in comparison: {e}')
+else:
+    print('⚠️ Missing data files for comparison')
+"
+          else
+            echo "⚠️ No today's data found for comparison"
+          fi
+        else
+          echo "⚠️ No yesterday's data found for comparison (first day?)"
+        fi
+    
+    - name: Upload historical data artifact
       uses: actions/upload-artifact@v4
+      if: success()
       with:
-        name: xml-historical-data
+        name: nse-historical-data
         path: data/processed/
         retention-days: 90
+        if-no-files-found: error
+    
+    - name: Upload reports artifact
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: nse-analysis-reports
+        path: outputs/
+        retention-days: 30
+        if-no-files-found: warn
+    
+    - name: Upload comparison results
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: nse-comparison-results
+        path: data/comparison/
+        retention-days: 30
         if-no-files-found: ignore
     
-    - name: List generated files
+    - name: Summary and logs
       run: |
-        echo "=== Generated Reports ==="
-        find outputs/ -type f -name "*.txt" -o -name "*.csv" | sort || echo "No reports found"
+        echo "=== ANALYSIS COMPLETE ==="
         echo ""
-        echo "=== Current Historical Data ==="
-        find data/processed -name "*.csv" -type f | sort || echo "No historical data files"
+        echo "📊 Artifacts Generated:"
+        echo "1. nse-historical-data - Historical CSV files"
+        echo "2. nse-analysis-reports - Analysis reports"
+        echo "3. nse-comparison-results - Day-over-day comparison"
         echo ""
-        echo "=== Artifact Status ==="
-        echo "Historical data will be available for next run"
+        echo "📈 Signals Generated:"
+        if [ -f "outputs/signals/daily_signals.txt" ]; then
+          cat outputs/signals/daily_signals.txt
+        else
+          echo "No signals file found"
+        fi
+        echo ""
+        echo "📁 Files Created:"
+        find outputs/ -type f | sort || echo "No output files"
+        echo ""
+        echo "⏰ Next Run: Tomorrow at 2:00 PM IST"
+        echo ""
+        echo "✅ Workflow completed successfully"
     
     - name: Commit and push results
+      if: success()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        # Configure git
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add outputs/
-        git status
-        git diff --cached --quiet || (git commit -m "Update NSE analysis reports $(date +'%Y-%m-%d %H:%M:%S')" && git push)
-        echo "✅ Reports committed to repository"
+        
+        # Check if there are any changes in outputs/
+        if git diff --quiet -- outputs/; then
+          echo "✅ No changes in outputs to commit"
+        else
+          echo "📝 Committing changes..."
+          git add outputs/
+          git commit -m "Update NSE analysis reports and signals $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+          
+          # Push changes
+          echo "🚀 Pushing changes..."
+          git push || echo "Push failed or no changes"
+        fi
