@@ -12,7 +12,7 @@ jobs:
     - name: Check for existing artifacts
       run: |
         echo "🔍 Checking if artifacts exist..."
-        echo "Artifact name: nse-historical-data"
+        echo "Artifact name: xml-historical-data"
         echo ""
         echo "How to check manually:"
         echo "1. Go to your repository"
@@ -20,13 +20,13 @@ jobs:
         echo "3. Look for 'Daily NSE Option Analysis' workflow"
         echo "4. Click on latest run"
         echo "5. Scroll down to 'Artifacts' section"
-        echo "6. You should see 'nse-historical-data' if any run succeeded"
+        echo "6. You should see 'xml-historical-data' if any run succeeded"
     
     - name: Try to download
       uses: actions/download-artifact@v4
       continue-on-error: true
       with:
-        name: nse-historical-data
+        name: xml-historical-data
         path: data/processed/
     
     - name: Show results
