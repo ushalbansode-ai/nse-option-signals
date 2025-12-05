@@ -1,9 +1,9 @@
-name: Auto NSE Signals
+name: Auto Run NSE Signals
 
 on:
-  schedule:
-    - cron: "35 14 * * 1-5"   # 8:05 PM IST = 14:35 UTC
   workflow_dispatch:
+  schedule:
+    - cron: "*/15 3-10 * * 1-5"   # every 15 min in market hours
 
 jobs:
   run:
@@ -20,9 +20,9 @@ jobs:
 
       - name: Commit & Push
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add -A
-          git commit -m "Auto update" || echo "No changes"
+          git config --global user.email "bot@github.com"
+          git config --global user.name "Auto Bot"
+          git add .
+          git commit -m "Auto update" || echo "Nothing to commit"
           git push
           
