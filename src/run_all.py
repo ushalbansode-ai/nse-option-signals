@@ -1,49 +1,49 @@
-import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 from fetch_bhavcopy import fetch_bhavcopy
-from utils import get_latest_two_files, load_csv
-from compare_engine import detect_signals
-from signal_engine import save_signals
-from scripts.build_dashboard import build_dashboard
+from parser_engine import parse_csv
+from compare_engine import compare_signals
+from dashboard import build_dashboard
+import os
 
 
 def main():
 
     print("[STEP] Fetching bhavcopy…")
-    csv_today = fetch_bhavcopy()
+    csv_today = fetch_bhavcopy()     # ← csv_today created here
 
-    prev_file, today_file = get_latest_two_files()
+    # -------------------------------------------------
+    # If no fresh bhavcopy available
+    # -------------------------------------------------
+    if csv_today is None:
+        print("[WARNING] No new bhavcopy downloaded.")
+        print("[INFO] Checking last available CSV…")
 
-    if prev_file is None:
-        print("[WARN] Not enough files to compare yet.")
-        return
+        raw_files = [
+            f for f in os.listdir("data/raw") if f.endswith(".csv")
+        ]
 
-    print("[STEP] Loading CSV files…")
-    prev_df = load_csv("data/raw/" + prev_file)
-    today_df = load_csv("data/raw/" + today_file)
+        if not raw_files:
+            print("[FATAL] No CSV files exist in data/raw/. Cannot continue.")
+            return
 
-    print("[STEP] Detecting signals…")
-    signals = detect_signals(prev_df, today_df)
+        csv_today = sorted(raw_files)[-1]
+        print(f"[INFO] Using previous CSV: {csv_today}")
 
-    print("[STEP] Saving signals…")
-    save_signals(signals)
+    print(f"[INFO] Processing CSV: {csv_today}")
 
-    print("[STEP] Building dashboard…")
-    build_dashboard()
+    # -------------------------------------------------
+    # Parse & compute signals
+    # -------------------------------------------------
+    df_today = parse_csv(csv_today)
 
-    print("[DONE] Run complete.")
-    csv_today = fetch_bhavcopy()
+    df_signals = compare_signals(df_today)
 
-if csv_today is None:
-    print("[WARNING] No new bhavcopy. Using last available file.")
-    last_files = [f for f in os.listdir("data/raw") if f.endswith(".csv")]
-    if not last_files:
-        print("[FATAL] No historical CSV available. Cannot continue.")
-        exit(0)
-    csv_today = sorted(last_files)[-1]
-    
-    
+    # -------------------------------------------------
+    # Build dashboard
+    # -------------------------------------------------
+    build_dashboard(df_signals)
+
+    print("[DONE] Signals + Dashboard updated.")
+
 
 if __name__ == "__main__":
     main()
