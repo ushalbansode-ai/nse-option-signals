@@ -33,6 +33,16 @@ def main():
     build_dashboard()
 
     print("[DONE] Run complete.")
+    csv_today = fetch_bhavcopy()
+
+if csv_today is None:
+    print("[WARNING] No new bhavcopy. Using last available file.")
+    last_files = [f for f in os.listdir("data/raw") if f.endswith(".csv")]
+    if not last_files:
+        print("[FATAL] No historical CSV available. Cannot continue.")
+        exit(0)
+    csv_today = sorted(last_files)[-1]
+    
     
 
 if __name__ == "__main__":
