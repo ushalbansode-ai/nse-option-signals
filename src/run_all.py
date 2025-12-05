@@ -1,5 +1,6 @@
 from fetch_bhavcopy import fetch_bhavcopy
-from parser_engine import parse_csv
+from compare_engine import parse_csv
+
 from compare_engine import compare_signals
 from dashboard import build_dashboard
 import os
